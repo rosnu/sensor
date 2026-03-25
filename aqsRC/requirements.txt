@@ -1,0 +1,5 @@
+requests==2.32.3
+numpy==2.0.2
+paho-mqtt==2.1.0
+SciPy==1.14.1
+
