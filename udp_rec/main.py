@@ -12,7 +12,6 @@ sock.settimeout(10 * 60.)
 
 cnt=0
 
-sensors
 def init_sensors():
     pass
     
