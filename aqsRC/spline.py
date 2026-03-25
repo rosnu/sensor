@@ -2,9 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import SmoothBivariateSpline
 
-from sensor_data import sensors, aqs5, aqs6
+from sensor_data import sensors, aqs5, aqs6, t, sim
 
-data = np.array(aqs6['cal'])
+# data = np.array(aqs5['cal'])
+
+s=sim #sensor
+
+params= s['params']
+data = np.array(s['cal'])
 
 
 x = data[:, 2]
@@ -22,8 +27,8 @@ z = data[:, 0]
 spline = SmoothBivariateSpline(x, y, z, kx=2, ky=2)
 
 # Auswerte-Gitter
-xi = np.linspace(500, 2500, 100)
-yi = np.linspace(500, 2500, 100)
+xi = np.linspace(0, 600, 100)
+yi = np.linspace(100, 700, 100)
 Xi, Yi = np.meshgrid(xi, yi)
 # Auswerte-Gitter
 
@@ -38,7 +43,7 @@ Zi = Zi.T   # <<< WICHTIG
 fig = plt.figure()
 ax = fig.add_subplot(projection="3d")
 
-ax.plot_surface(Xi, Yi, Zi, cmap="viridis", alpha=0.9)
+ax.plot_surface(Xi, Yi, Zi, cmap="viridis", alpha=0.5)
 ax.scatter(x, y, z, color="r", s=10)
 
 ax.set_xlabel("x")

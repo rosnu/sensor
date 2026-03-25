@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import csv
+import paho.mqtt.client as mqtt
 
 import mhLib.Avg
 from mhLib.Avg import  Avg
@@ -66,14 +67,16 @@ def proc_data(data):
     # print(f"    Inhalt: '{message}'")
         
     d= message.split(',')
-    print(d)
+    # print(d)
     if d[0]=='aqs5':
         aif_avg.add(int(d[1]))
         ai1_avg.add(int(d[2]))
         
         aif=round(aif_avg.avg,1)
         ai1=round(ai1_avg.avg,1)
-        print (aif, ", " ,ai1, ", ", cnt )
+        print (d[1], ", " ,d[2], ", ", cnt )
+        print (aif, ", " ,ai1)
+        print()
 
 def receive_udp(sock):
     """Hauptempfangsschleife für UDP-Nachrichten - BLOCKIEREND"""
@@ -82,7 +85,7 @@ def receive_udp(sock):
             # Blockierendes recvfrom - kein Timeout!
             data, addr = sock.recvfrom(1024)
             if data:
-                print(f"\n[UDP von {addr}]: {data.decode()}")
+                # print(f"\n[UDP von {addr}]: {data.decode()}")
                 proc_data(data)
                 # print("> ", end="", flush=True)
         except Exception as e:
@@ -125,7 +128,7 @@ def main():
     udp_socket.bind(('0.0.0.0', 61806))
     # KEIN settimeout() hier!
     
-    print("UDP-Empfänger gestartet. Port: 12345")
+    print("UDP-Empfänger gestartet. Port: x")
     print("Tippe 'quit' zum Beenden")
     print("> ", end="", flush=True)
     
@@ -151,6 +154,25 @@ def main():
     finally:
         running.clear()
         udp_socket.close()
+
+
+def watch():
+    
+    
+    pass
+
+def main2():
+    client = mqtt.Client(
+    callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+    )
+    client.reconnect_delay_set(min_delay=1, max_delay=60)
+    client.connect("192.168.178.40", 1883, keepalive=60)
+    client.loop_start()
+    
+
+    pass
+
+
 
 if __name__ == "__main__":
     main()
