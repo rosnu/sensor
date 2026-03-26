@@ -312,10 +312,19 @@ def run():
             print (payload)
             if payload[0]=="{": #json
                 msg = json.loads(payload)
-                client.publish(msg["name"], payload, )
+                name = msg["name"]
+                client.publish(name, payload, )
                 print (msg)
+                sensor=aqss[name]
+                aif=msg["aif"]
+                ai1=msg["ai1"]
+                sensor.add(aif, ai1)
+                json=sensor.toJson()
+                client.publish(name, json, )
+
+                
                 pass
-            else:  #list 
+            else:  #list, depricated
                 d= payload.split(',')
         
                 name=d[0]
