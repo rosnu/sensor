@@ -1,17 +1,9 @@
 
-
 import socket
 import datetime
 import json
-# import requests
-# import time
-# import mhLib.Avg
-# import math
 from math import exp,log,sqrt
 import numpy as np
-# import mhLib.send_webde
-# from mhlib.Avg import Avg
-# import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
@@ -22,13 +14,7 @@ from scipy.interpolate import interp1d
 import sys
 sys.path.append('/home/marek/docker/python/aqs')
 
-# # Jetzt kannst du das Modul ganz normal importieren
-# import mein_modul
-
 from sensor_data import sensors #, aqs5, aqs6
-
-# import interpolated2 as interpolated
-# from interpolated2 import Interpolator
 
 mqtt_host = "192.168.178.40"
 
@@ -42,16 +28,16 @@ class Avg():
     def add(self, val=0):  # 
         
         if self.m<self.m_max: self.m+=1
-        self.diff=(val -self.val)/self.m
-        self.val+=self.diff
+        self.diff=val -self.val
+        self.val+=self.diff/self.m
         
 class Sensor():
 
     def __init__(self, name='aqs5'):
         self.name=name
-        self.aqs=sensors[name]
+        self.aqs=sensors[name] #sensor_data
 
-        self.data = np.array(self.aqs['cal'])
+        self.data = np.array(self.aqs['cal']) #calibration data
     
         self.measures = self.data[:, 2:]
         self.ufs=self.data[:, 2]
@@ -59,10 +45,9 @@ class Sensor():
         self.Rs = self.data[:, 0]
         self.Cs = self.data[:, 1]
         # self.Ts = self.data[:, 0] * self.data[:, 1]
-        self.usf_errs = np.zeros(len(self.data))
-        self.us1_errs = np.zeros(len(self.data))
+        # self.usf_errs = np.zeros(len(self.data))
+        # self.us1_errs = np.zeros(len(self.data))
 
-        self.u0 = 3.3
         self.r0 = self.aqs['params']['r0'] * 1e3
         self.rout = self.aqs['params']['rout'] * 1e3
         self.dt = self.aqs['params']['dt']
@@ -87,8 +72,10 @@ class Sensor():
         self.cycle=0
         self.dcycle=0
        
-        self.u1 = 0
         self.uf = 0
+        self.u1 = 0
+        self.u0 = 3.3
+        self.ai_range = self.u0/self.aqs['params']['du']
         
         self.rs=0
         self.T=0
@@ -97,8 +84,9 @@ class Sensor():
                
         self.rs_avg=Avg(self.m_avg)
         self.cs_avg=Avg(self.m_avg)
-        self.u1_avg=Avg(self.m_avg)
         self.uf_avg=Avg(self.m_avg)
+        self.u1_avg=Avg(self.m_avg)
+        self.u0_avg=Avg(self.m_avg)
         self.T_avg=Avg(self.m_avg)
         self.Ts_avg=Avg(self.m_avg)
         # self.sigma_rs=0
@@ -121,14 +109,32 @@ class Sensor():
             
         return np.array(rs_ipol)
 
-    def add(self,aif,ai1):
-        self.cnt+=1
+    def add(self, aif, ai1, ai0):
+        # self.cnt+=1
         
-        self.aif=aif
-        self.ai1=ai1
+        # adjust if battery low
+        self.aif=aif*self.ai_range/ai0
+        self.ai1=ai1*self.ai_range/ai0
+        self.ai0=ai0
         
         self.uf=aif*self.aqs['params']['du']
         self.u1=ai1*self.aqs['params']['du']
+        self.u0=ai0*self.aqs['params']['du']
+        
+        self.uf_avg.add(self.uf)
+        self.u1_avg.add(self.u1)
+        self.u0_avg.add(self.u0)
+        
+        if  abs(self.uf_avg.diff)/self.uf_avg.val >=.2 or \
+            abs(self.u1_avg.diff)/self.u1_avg.val >=.2 or \
+            abs(self.u0_avg.diff)/self.u0_avg.val >=.2:
+            self.status=0
+            return 
+        # k = 3.3/self.u0
+        # k=3.3/(ai0*self.aqs['params']['du'])
+        #
+        # self.uf=3.3 * aif/ai0
+        # self.u1=3.3 * ai1/ai0
         
         self.rs = self.spline_rs(self.aif,self.ai1)[0][0]
         self.rs2 = self.fkt_rs_interpol(self.ai1).item()
@@ -139,8 +145,9 @@ class Sensor():
         
         self.rs_avg.add(self.rs)
         self.cs_avg.add(self.cs)
-        self.u1_avg.add(self.u1)
-        self.uf_avg.add(self.uf)
+        # self.uf_avg.add(self.uf)
+        # self.u1_avg.add(self.u1)
+        # self.u0_avg.add(self.u0)
         self.T_avg.add(self.T)
         self.Ts_avg.add(self.Ts)
         
@@ -161,6 +168,7 @@ class Sensor():
         s += "Ts = " + str(self.Ts) + '\n'
         s += "uf = " + str(self.uf) + '\n'
         s += "u1 = " + str(self.u1) + '\n'
+        s += "u0 = " + str(self.u0) + '\n'
         
         s += "C_avg = " + str(self.cs_avg.val) + '\n'
         s += "R_avg = " + str(self.rs_avg.val) + '\n'
@@ -176,13 +184,17 @@ class Sensor():
     def toJson(self):
     
         payload = {
-            "aif": self.aif,
-            "ai1": self.ai1,
+            "aif": round(self.aif,1),
+            "ai1": round(self.ai1,1),
+            "ai0": self.ai0,
             "uf" : round(self.uf,3),
             "uf_avg" : round(self.uf_avg.val,3),
             "u1" : round(self.u1,3),
             "u1_avg" : round(self.u1_avg.val,3),
+            "u0" : round(self.u0,3),
+
             "R" : round(self.rs,3),
+            "R_avg" : round(self.rs_avg.val,3),
             "R2" : round(self.rs2,3),
             "C" : round(self.cs,1),
             "C_avg" : round(self.cs_avg.val,1),
@@ -190,9 +202,8 @@ class Sensor():
             "T_avg" : round(self.T_avg.val,1),
             "Ts" : round(self.Ts,1),
             "Ts_avg" : round(self.Ts_avg.val,1),
-            "dcycle" : self.dcycle,
+            "cnt" : self.cnt,
             "status" : self.status, # just a flag for ok/ko in db query
-            
             }
 
         return json.dumps(payload)
@@ -216,59 +227,6 @@ class Sensor():
         # self.sigma_cs=0
         # self.sigma_T=0
         
-        
-#     def publishMQTT(self):
-#         publish.single(self.name +"/u1",self.u1, hostname=mqtt_host)
-#         publish.single(self.name +"/uf",self.uf, hostname=mqtt_host)
-#         publish.single(self.name +"/u1_avg",self.u1_avg, hostname=mqtt_host)
-#         publish.single(self.name +"/uf_avg",self.uf_avg, hostname=mqtt_host)
-#         publish.single(self.name +"/R",self.rs, hostname=mqtt_host)
-#         publish.single(self.name +"/C",self.cs, hostname=mqtt_host)
-#         publish.single(self.name +"/Ravg",self.rs_avg, hostname=mqtt_host)
-#         publish.single(self.name +"/Cavg",self.cs_avg, hostname=mqtt_host)
-#         publish.single(self.name +"/T",self.T, hostname=mqtt_host)
-#         publish.single(self.name +"/Ts",self.Ts, hostname=mqtt_host)
-#
-#         publish.single(self.name +"/sigma_R",self.sigma_rs, hostname=mqtt_host)
-#         publish.single(self.name +"/sigma_C",self.sigma_cs, hostname=mqtt_host)
-#         publish.single(self.name +"/sigma_T",self.sigma_T*1e9, hostname=mqtt_host)
-#
-# #         def calc_err_usf_us1(self, data):
-# #             rs = data[0] * 1e3
-# #             cs = data[1] * 1e-12
-# #             aif = data[2] * self.du
-# #             ai1 = data[3] * self.du
-# #
-# #             ioutf = aif / self.rout
-# #             iout1 = ai1 / self.rout
-# #             '''
-# #             Superpos.
-# #             a)
-# #            iout=ai/rout
-# #            us=ur0=rs||r0*iout = ai/rout*rs*r0/(rs+r0)
-# #            b)
-# #            us=u0*rs/(r0+rs)   
-# #             '''
-# #             krs = rs / (rs + self.r0)
-# #             rs_r0 = self.r0 * krs  # rs||r0
-# #             us1 = self.u0 * krs - iout1 * rs_r0  # iout*r0||rs
-# #             T = rs_r0 * cs
-# #             '''
-# #             us*e^(-t/T)=u0-us     # wg. symmetrie
-# #             us=u0/(e^(-t/T)+1)
-# #             '''
-# #             usf = us1 / (math.exp(-self.dt / T) + 1)
-# #
-# #             # us_error, U_diode(aif, ai1)
-# #             return usf - aif, us1 - ai1
-# #
-# #
-# #
-# # # mhpc4-ubu
-# # # user = 'oh.marek.QYfJFA2xdKN4USYZ5HyXhF31p4Z7TZySNHfr4bby89A1PBNi5GL9AfLgxkQhMnnSDLfOMSHnk7O5Hug7Q'
-# # # url = "http://mhpc4-ubu:58080/rest/items/"
-
-
 UDP_IP = ''
 UDP_PORT = 61806
 
@@ -276,12 +234,7 @@ sock = socket.socket(socket.AF_INET,  # Internet
                      socket.SOCK_DGRAM)  # UDP
 sock.bind((UDP_IP, UDP_PORT))
 
-sock.settimeout(10 * 60.)
-
-# cnt=0
-# sensor0= Sensor()
-# sensor1= Sensor()
-# sensors = {'sensor0':sensor0,'sensor1':sensor1,  }
+sock.settimeout(15 * 60.)
 
 client = mqtt.Client(
     callback_api_version=mqtt.CallbackAPIVersion.VERSION2
@@ -296,9 +249,6 @@ aqss = {
     'aqs6':Sensor(name='aqs6'),
     'aqs8':Sensor(name='aqs8'),
     }
-# for k,v in params.items():
-#     sensors[k]=Sensor(name=k) 
-#     pass
 
 def run():
     while True:
@@ -309,44 +259,25 @@ def run():
             print (datetime.datetime.now(), "received message:", data, addr)
             
             payload = data.decode()
-            print (payload)
+            # print (payload)
             if payload[0]=="{": #json
                 msg = json.loads(payload)
                 name = msg["name"]
-                client.publish(name, payload, )
-                print (msg)
+                # client.publish(name, payload, )
+                # print (msg)
                 sensor=aqss[name]
                 aif=msg["aif"]
                 ai1=msg["ai1"]
-                sensor.add(aif, ai1)
-                json=sensor.toJson()
-                client.publish(name, json, )
+                ai0=msg["ai0"]
+                sensor.add(aif, ai1, ai0)
+                sensor.cnt=msg["cnt"]
+                json_=sensor.toJson()
+                client.publish(name, json_, )
 
-                
+                print(json_)
                 pass
-            else:  #list, depricated
-                d= payload.split(',')
-        
-                name=d[0]
-                # if name=='aqs8':
-                #     print(name)
-                sensor=aqss[name]
-                
-                aif=int(d[1])
-                ai1=int(d[2])
-                try:
-                    sensor.dcycle=int(d[4]) - sensor.cycle
-                    sensor.cycle=int(d[4])
-                except:
-                    print("no data")
-                
-                sensor.add(aif, ai1)
-                js=sensor.toJson()
-                client.publish(name, js, )
-                data=json.loads(js)
-                for k,v in data.items():
-                    client.publish(name+'/'+k, v, qos=1)
-                sensor.print()
+            else:  #list, depricated - see previous commit
+                print ("msg error")
     
         except Exception as e:
             print (e)

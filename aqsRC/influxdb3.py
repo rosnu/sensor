@@ -155,9 +155,9 @@ def delete_http():
     
     payload = {
         "database": "local_system",
-        "start": "2026-02-09T09:09:00Z",
-        "stop":  "2026-02-09T09:09:05Z",
-        "predicate": "topic = 'aqs6'"
+        "start": "2025-02-09T09:09:00Z",
+        "stop":  "2027-02-09T09:09:05Z",
+        "predicate": "topic = 'aqs5'"
     }
     
     r = requests.post(url, headers=headers, json=payload, timeout=10)
@@ -174,10 +174,10 @@ def delete_http():
 
 if __name__ == '__main__':
     # set_measure_ko('2026-02-09 22:29:58', dts=5)
-    # delete_http()
+    delete_http()
     # test_delete()
     # test()
-    recalculate()
+    # recalculate()
     pass
 
 
